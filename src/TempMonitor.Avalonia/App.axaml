@@ -1,0 +1,37 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="TempMonitor.App.App"
+             RequestedThemeVariant="Dark">
+    <Application.Resources>
+        <!-- Same palette as the WPF app -->
+        <SolidColorBrush x:Key="WindowBg" Color="#111418"/>
+        <SolidColorBrush x:Key="CardBg" Color="#1A1F26"/>
+        <SolidColorBrush x:Key="CardBorder" Color="#262D36"/>
+        <SolidColorBrush x:Key="TextPrimary" Color="#E8ECF1"/>
+        <SolidColorBrush x:Key="TextMuted" Color="#8A94A3"/>
+        <SolidColorBrush x:Key="TrackBg" Color="#262D36"/>
+        <SolidColorBrush x:Key="UsageBrush" Color="#4C9AFF"/>
+        <SolidColorBrush x:Key="SecondaryBrush" Color="#9B7BFF"/>
+        <SolidColorBrush x:Key="CoolBrush" Color="#3DD68C"/>
+        <SolidColorBrush x:Key="WarmBrush" Color="#F5B83D"/>
+        <SolidColorBrush x:Key="HotBrush" Color="#FF5C5C"/>
+        <SolidColorBrush x:Key="WarnBg" Color="#33F5B83D"/>
+    </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme/>
+        <Style Selector="CheckBox">
+            <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="16,0,0,0"/>
+        </Style>
+        <Style Selector="Button.toolbar">
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+            <Setter Property="Background" Value="{StaticResource CardBg}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource CardBorder}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="10,4"/>
+            <Setter Property="Margin" Value="16,0,0,0"/>
+        </Style>
+    </Application.Styles>
+</Application>

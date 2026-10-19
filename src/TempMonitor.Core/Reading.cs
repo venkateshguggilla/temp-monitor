@@ -1,6 +1,9 @@
 namespace TempMonitor;
 
-/// <summary>One card's worth of data, produced by <see cref="SensorService"/> once per refresh.</summary>
+/// <summary>How hot a reading is, by the card's own thresholds.</summary>
+public enum TempLevel { Cool, Warm, Hot }
+
+/// <summary>One card's worth of data, produced by an <see cref="ISensorProvider"/> once per refresh.</summary>
 public sealed class Reading
 {
     public required string Key { get; init; }
@@ -24,6 +27,9 @@ public sealed class Reading
     public string SecondaryLabel { get; set; } = "";
 
     public List<string> Details { get; } = new();
+
+    public TempLevel Level(float celsius) =>
+        celsius >= HotAt ? TempLevel.Hot : celsius >= WarmAt ? TempLevel.Warm : TempLevel.Cool;
 
     public static string FormatTemp(float celsius, bool fahrenheit) =>
         fahrenheit ? $"{celsius * 9 / 5 + 32:0} °F" : $"{celsius:0} °C";

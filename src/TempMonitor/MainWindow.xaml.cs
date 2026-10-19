@@ -12,7 +12,7 @@ public partial class MainWindow : Window
     private readonly CancellationTokenSource _cts = new();
     private readonly TaskCompletionSource _stopped = new();
     private readonly TrayIcon _tray;
-    private SensorService? _sensors;
+    private WindowsSensorProvider? _sensors;
     private List<Reading> _latest = new();
 
     public MainWindow()
@@ -55,7 +55,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            _sensors = new SensorService();
+            _sensors = new WindowsSensorProvider();
             Dispatcher.BeginInvoke(ShowEnvironmentWarning);
             Dispatcher.BeginInvoke(InitAutoStartBox);
 

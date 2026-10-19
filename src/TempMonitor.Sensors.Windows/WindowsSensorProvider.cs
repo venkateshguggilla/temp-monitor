@@ -10,7 +10,7 @@ namespace TempMonitor;
 /// values the hardware itself reports (Intel DTS via MSR, AMD ADL, NVMe/SMART), with
 /// Windows' storage reliability counters as a fallback for drive temperature.
 /// </summary>
-public sealed class SensorService : IDisposable
+public sealed class WindowsSensorProvider : ISensorProvider
 {
     private readonly object _lock = new();
     private readonly Computer _computer;
@@ -31,7 +31,18 @@ public sealed class SensorService : IDisposable
     public bool IsElevated { get; }
     public bool PawnIoInstalled { get; }
 
-    public SensorService()
+    public ProviderStatus Status => new(
+        Summary: $"admin: {(IsElevated ? "yes" : "no")} · PawnIO: {(PawnIoInstalled ? "installed" : "not installed")} · " +
+                 "sensors via LibreHardwareMonitor",
+        Warning: !IsElevated
+            ? "Not running as administrator. CPU, RAM and drive temperatures need admin rights. Click Run as admin above."
+            : !PawnIoInstalled
+                ? "The PawnIO driver isn't installed on this PC, so CPU (and RAM) temperatures can't be read. Install it once, then restart Temp Monitor."
+                : null,
+        CanElevate: !IsElevated,
+        CanInstallDriver: IsElevated && !PawnIoInstalled);
+
+    public WindowsSensorProvider()
     {
         IsElevated = new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator);
         PawnIoInstalled = PawnIoInstaller.IsInstalled();

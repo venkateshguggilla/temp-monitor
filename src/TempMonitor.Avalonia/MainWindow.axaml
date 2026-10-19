@@ -1,0 +1,52 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="TempMonitor.App.MainWindow"
+        Title="Temp Monitor" Width="760" Height="760" MinWidth="400" MinHeight="300"
+        Background="{StaticResource WindowBg}" WindowStartupLocation="CenterScreen"
+        Icon="/Assets/app.ico">
+    <DockPanel>
+        <!-- Toolbar -->
+        <DockPanel DockPanel.Dock="Top" Margin="20,14,20,4">
+            <Image Source="/Assets/logo.png" Width="28" Height="28" Margin="0,0,10,0" VerticalAlignment="Center"
+                   RenderOptions.BitmapInterpolationMode="HighQuality"/>
+            <TextBlock Text="Temp Monitor" FontSize="18" FontWeight="SemiBold"
+                       Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="RunAsAdminButton" Classes="toolbar" Click="OnRunAsAdmin" IsVisible="False"
+                        Background="{StaticResource WarnBg}" BorderBrush="{StaticResource WarmBrush}"
+                        ToolTip.Tip="Restart Temp Monitor with administrator rights (needed for CPU, RAM and drive temperatures)">
+                    <TextBlock Text="🛡 Run as admin" Foreground="{StaticResource WarmBrush}"/>
+                </Button>
+                <Button Classes="toolbar" Content="All sensors" Click="OnShowAllSensors"/>
+                <Button x:Name="SaveDiagnosticsButton" Classes="toolbar" Content="Save diagnostics" Click="OnSaveDiagnostics"/>
+            </StackPanel>
+        </DockPanel>
+
+        <!-- Options -->
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="58,2,20,4">
+            <CheckBox x:Name="FahrenheitBox" Content="°F" Margin="0" IsCheckedChanged="OnFahrenheitChanged"/>
+            <CheckBox x:Name="TopmostBox" Content="Always on top" IsCheckedChanged="OnTopmostChanged"/>
+            <CheckBox x:Name="AutoStartBox" Content="Start with Windows" IsEnabled="False" IsVisible="False"
+                      Click="OnAutoStartClicked"/>
+        </StackPanel>
+
+        <!-- Status line -->
+        <TextBlock x:Name="StatusText" DockPanel.Dock="Bottom" Margin="20,4,20,12" FontSize="11"
+                   Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" Text="Detecting hardware…"/>
+
+        <!-- Warning banner (missing driver / rights) -->
+        <Border x:Name="WarningBanner" DockPanel.Dock="Top" Margin="20,8,20,0" Padding="12,8"
+                CornerRadius="6" Background="{StaticResource WarnBg}" IsVisible="False">
+            <DockPanel>
+                <Button x:Name="InstallDriverButton" Classes="toolbar" DockPanel.Dock="Right"
+                        Click="OnInstallDriver" IsVisible="False" VerticalAlignment="Center"/>
+                <TextBlock x:Name="WarningText" Foreground="{StaticResource WarmBrush}" TextWrapping="Wrap"
+                           FontSize="12" VerticalAlignment="Center"/>
+            </DockPanel>
+        </Border>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="12,4,12,0">
+            <WrapPanel x:Name="Cards" HorizontalAlignment="Center"/>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

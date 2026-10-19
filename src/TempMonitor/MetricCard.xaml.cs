@@ -6,11 +6,7 @@ namespace TempMonitor;
 
 public partial class MetricCard : UserControl
 {
-    private const int HistoryLength = 120;
-
-    private readonly Queue<float?> _temps = new();
-    private readonly Queue<float?> _usages = new();
-    private float? _minTemp, _maxTemp;
+    private readonly CardHistory _history = new();
     private Reading? _last;
 
     public MetricCard()
@@ -28,12 +24,14 @@ public partial class MetricCard : UserControl
 
         if (r.Temperature is { } t)
         {
-            _minTemp = Math.Min(_minTemp ?? t, t);
-            _maxTemp = Math.Max(_maxTemp ?? t, t);
             TempText.Text = Reading.FormatTemp(t, fahrenheit);
             TempText.FontSize = 34;
-            TempText.Foreground = (Brush)FindResource(
-                t >= r.HotAt ? "HotBrush" : t >= r.WarmAt ? "WarmBrush" : "CoolBrush");
+            TempText.Foreground = (Brush)FindResource(r.Level(t) switch
+            {
+                TempLevel.Hot => "HotBrush",
+                TempLevel.Warm => "WarmBrush",
+                _ => "CoolBrush",
+            });
             TempLabel.Text = "Temperature · " + r.TemperatureSource;
             TempLine.Stroke = TempText.Foreground;
         }
@@ -63,19 +61,12 @@ public partial class MetricCard : UserControl
         DetailsText.Text = string.Join("   ·   ", r.Details);
         DetailsText.Visibility = r.Details.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
-        Push(_temps, r.Temperature);
-        Push(_usages, r.Usage);
+        _history.Add(r.Temperature, r.Usage);
         LegendText.Text = r.Temperature.HasValue ? "— temperature   — usage   (last 2 min)" : "— usage   (last 2 min)";
-        MinMaxText.Text = _minTemp.HasValue
-            ? $"min {Reading.FormatTemp(_minTemp.Value, fahrenheit)}  ·  max {Reading.FormatTemp(_maxTemp!.Value, fahrenheit)}"
+        MinMaxText.Text = _history.MinTemp.HasValue
+            ? $"min {Reading.FormatTemp(_history.MinTemp.Value, fahrenheit)}  ·  max {Reading.FormatTemp(_history.MaxTemp!.Value, fahrenheit)}"
             : "";
         DrawHistory();
-    }
-
-    private static void Push(Queue<float?> q, float? v)
-    {
-        q.Enqueue(v);
-        while (q.Count > HistoryLength) q.Dequeue();
     }
 
     private void SetBar(Border bar, float? percent)
@@ -89,28 +80,10 @@ public partial class MetricCard : UserControl
     {
         double w = ChartArea.ActualWidth, h = ChartArea.ActualHeight;
         if (w <= 0 || h <= 0) return;
-
-        // Usage always spans 0–100 %. Temperature uses a fixed band around the card's
-        // thresholds so the line's height means the same thing from second to second.
-        UsageLine.Points = Plot(_usages, w, h, 0, 100);
-        var hot = _last?.HotAt ?? 100;
-        var hi = Math.Max(hot + 5, _maxTemp ?? 0);
-        var lo = Math.Min(25, _minTemp ?? 25);
-        TempLine.Points = Plot(_temps, w, h, lo, hi);
+        UsageLine.Points = ToPoints(_history.UsagePoints(w, h));
+        TempLine.Points = ToPoints(_history.TempPoints(w, h, _last?.HotAt ?? 100));
     }
 
-    private static PointCollection Plot(IEnumerable<float?> values, double w, double h, double lo, double hi)
-    {
-        var points = new PointCollection();
-        var step = w / (HistoryLength - 1);
-        var arr = values.ToArray();
-        var offset = HistoryLength - arr.Length;
-        for (var i = 0; i < arr.Length; i++)
-        {
-            if (arr[i] is not { } v) continue;
-            var y = h - (Math.Clamp(v, lo, hi) - lo) / (hi - lo) * (h - 2) - 1;
-            points.Add(new Point((offset + i) * step, y));
-        }
-        return points;
-    }
+    private static PointCollection ToPoints(IReadOnlyList<(double X, double Y)> points) =>
+        new(points.Select(p => new Point(p.X, p.Y)));
 }
