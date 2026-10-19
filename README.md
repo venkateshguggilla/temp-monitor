@@ -45,15 +45,24 @@ Requires the .NET 8 SDK. Open `TempMonitor.sln`, or from a terminal:
 |---|---|
 | `src/TempMonitor.Core` | Platform-neutral model: `Reading`, temperature levels, `CardHistory` (graph data), `ISensorProvider` |
 | `src/TempMonitor.Sensors.Windows` | Windows sensors (LibreHardwareMonitor, storage APIs, SMART over USB), PawnIO install, start at sign-in, run as admin |
-| `src/TempMonitor.Avalonia` | **The app (2.0)**: cross-platform UI (Avalonia 11.3), same features as 1.x; Linux build coming |
+| `src/TempMonitor.Sensors.Linux` | Linux sensors without root: hwmon (coretemp, k10temp/zenpower, amdgpu, nvme, drivetemp, jc42/spd5118), `/proc`, NVML for NVIDIA |
+| `src/TempMonitor.Avalonia` | **The app (2.0)**: cross-platform UI (Avalonia 11.3) for Windows and Linux, same features as 1.x |
 | `src/TempMonitor` | The original WPF app (1.x), kept as a reference until 2.0 replaces it |
-| `tests/TempMonitor.Core.Tests` | Unit tests (`dotnet test`) |
+| `tests/` | Unit tests (`dotnet test`); the Linux provider is tested against fake `/sys` and `/proc` trees |
 
 Portable single exe (2.0, Avalonia):
 
 ```
-dotnet publish src\TempMonitor.Avalonia -c Release -o dist
+dotnet publish src\TempMonitor.Avalonia -f net8.0-windows -c Release -o dist
 ```
+
+Linux (one self-contained executable, also buildable from Windows):
+
+```
+dotnet publish src/TempMonitor.Avalonia -f net8.0 -r linux-x64 -c Release -o dist/linux-x64
+```
+
+On Linux no admin rights are needed. SATA/USB drive temperatures need the `drivetemp` kernel module (`sudo modprobe drivetemp`), and NVIDIA GPUs need the NVIDIA driver (NVML). `TempMonitor --print` prints the readings in a terminal without opening a window.
 
 The 1.x WPF exe: `dotnet publish src\TempMonitor -c Release -o dist`.
 

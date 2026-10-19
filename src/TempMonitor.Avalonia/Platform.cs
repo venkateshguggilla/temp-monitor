@@ -13,7 +13,7 @@ public abstract class Platform
 #if WINDOWS
         new WindowsAppPlatform();
 #else
-        new UnsupportedPlatform();
+        OperatingSystem.IsLinux() ? new LinuxAppPlatform() : new UnsupportedPlatform();
 #endif
 
     public abstract ISensorProvider CreateSensorProvider();
@@ -82,7 +82,119 @@ internal sealed class WindowsAppPlatform : Platform
 }
 #endif
 
-/// <summary>Placeholder until the Linux sensor provider exists.</summary>
+#if !WINDOWS
+/// <summary>
+/// Linux: hwmon sensors (no root needed), single instance through a Unix socket in
+/// $XDG_RUNTIME_DIR, and start at sign-in through an XDG autostart entry.
+/// </summary>
+internal sealed class LinuxAppPlatform : Platform
+{
+    private static readonly string RuntimeDir =
+        Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR") is { Length: > 0 } d ? d : Path.GetTempPath();
+    private static readonly string SocketPath = Path.Combine(RuntimeDir, "temp-monitor.sock");
+    private static readonly string AutoStartFile = Path.Combine(
+        Environment.GetEnvironmentVariable("XDG_CONFIG_HOME") is { Length: > 0 } c ? c
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config"),
+        "autostart", "temp-monitor.desktop");
+
+    private System.Net.Sockets.Socket? _listener;
+
+    public override ISensorProvider CreateSensorProvider() => new LinuxSensorProvider();
+
+    public override bool TryAcquireSingleInstance(bool waitForPrevious)
+    {
+        // Another copy is running if something answers on the socket
+        if (TrySend("ping")) return false;
+        try
+        {
+            File.Delete(SocketPath); // stale socket from a copy that crashed
+            _listener = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.Unix,
+                System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Unspecified);
+            _listener.Bind(new System.Net.Sockets.UnixDomainSocketEndPoint(SocketPath));
+            _listener.Listen(4);
+        }
+        catch (Exception e) when (e is System.Net.Sockets.SocketException or IOException or UnauthorizedAccessException)
+        {
+            _listener = null; // can't enforce a single copy; run anyway
+        }
+        return true;
+    }
+
+    public override void SignalFirstInstance() => TrySend("show");
+
+    public override void ListenForActivation(Action onActivate)
+    {
+        if (_listener == null) return;
+        new Thread(() =>
+        {
+            while (true)
+            {
+                try
+                {
+                    using var client = _listener.Accept();
+                    var buffer = new byte[16];
+                    var n = client.Receive(buffer);
+                    if (System.Text.Encoding.ASCII.GetString(buffer, 0, n).StartsWith("show", StringComparison.Ordinal))
+                        onActivate();
+                }
+                catch (System.Net.Sockets.SocketException) { return; }
+                catch (ObjectDisposedException) { return; }
+            }
+        }) { IsBackground = true, Name = "Activate listener" }.Start();
+    }
+
+    private static bool TrySend(string message)
+    {
+        try
+        {
+            using var s = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.Unix,
+                System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Unspecified);
+            s.Connect(new System.Net.Sockets.UnixDomainSocketEndPoint(SocketPath));
+            s.Send(System.Text.Encoding.ASCII.GetBytes(message));
+            return true;
+        }
+        catch (Exception e) when (e is System.Net.Sockets.SocketException or IOException)
+        {
+            return false;
+        }
+    }
+
+    public override string AutoStartLabel => "Start at sign-in";
+    public override bool AutoStartSupported => true;
+    public override bool CanChangeAutoStart => true;
+    public override string? AutoStartHint => "Start Temp Monitor in the top bar when you sign in";
+    public override bool IsAutoStartEnabled() => File.Exists(AutoStartFile);
+
+    public override void SetAutoStart(bool enabled)
+    {
+        if (!enabled)
+        {
+            File.Delete(AutoStartFile);
+            return;
+        }
+        Directory.CreateDirectory(Path.GetDirectoryName(AutoStartFile)!);
+        File.WriteAllText(AutoStartFile,
+            "[Desktop Entry]\n" +
+            "Type=Application\n" +
+            "Name=Temp Monitor\n" +
+            "Comment=CPU, GPU, RAM and drive temperatures\n" +
+            $"Exec=\"{Environment.ProcessPath}\" {Program.MinimizedArg}\n" +
+            "Icon=temp-monitor\n" +
+            "X-GNOME-Autostart-enabled=true\n");
+    }
+
+    /// <summary>If the app moved since autostart was turned on, point the entry at the new path.</summary>
+    public override void RepairAutoStart()
+    {
+        if (IsAutoStartEnabled() && !File.ReadAllText(AutoStartFile).Contains(Environment.ProcessPath ?? "", StringComparison.Ordinal))
+            SetAutoStart(true);
+    }
+
+    public override string DiagnosticsFolder => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+}
+#endif
+
+/// <summary>Operating systems without a sensor provider yet.</summary>
 internal sealed class UnsupportedPlatform : Platform
 {
     public override ISensorProvider CreateSensorProvider() =>

@@ -1,15 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Cross-platform Temp Monitor (Avalonia). Windows build for now (feature parity with the
-       WPF app); a net8.0 Linux build with a Linux sensor provider follows. -->
+  <!-- Cross-platform Temp Monitor (Avalonia). net8.0-windows: LibreHardwareMonitor sensors;
+       net8.0: Linux (hwmon) sensors. Linux publish: dotnet publish -f net8.0 -r linux-x64 -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFrameworks>net8.0-windows;net8.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>TempMonitor</AssemblyName>
     <RootNamespace>TempMonitor.App</RootNamespace>
-    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <Version>2.0.0</Version>
   </PropertyGroup>
@@ -17,6 +16,7 @@
   <!-- Windows: elevated by default (CPU/RAM/drive temperatures need admin), single portable exe. -->
   <PropertyGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
@@ -26,9 +26,18 @@
   </PropertyGroup>
 
   <!-- `dotnet build -p:AsInvoker=true` builds a non-elevated copy for development. -->
-  <PropertyGroup Condition="'$(AsInvoker)' == 'true'">
+  <PropertyGroup Condition="'$(AsInvoker)' == 'true' and '$(TargetFramework)' == 'net8.0-windows'">
     <ApplicationManifest>app.asinvoker.manifest</ApplicationManifest>
     <DefineConstants>$(DefineConstants);DEV_INSTANCE</DefineConstants>
+  </PropertyGroup>
+
+  <!-- Linux: one self-contained executable when published with -r linux-x64 -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net8.0'">
+    <SelfContained Condition="'$(RuntimeIdentifier)' != ''">true</SelfContained>
+    <PublishSingleFile Condition="'$(RuntimeIdentifier)' != ''">true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType Condition="'$(Configuration)' == 'Release'">embedded</DebugType>
   </PropertyGroup>
 
   <ItemGroup>
@@ -45,6 +54,8 @@
     <ProjectReference Include="..\TempMonitor.Core\TempMonitor.Core.csproj" />
     <ProjectReference Include="..\TempMonitor.Sensors.Windows\TempMonitor.Sensors.Windows.csproj"
                       Condition="'$(TargetFramework)' == 'net8.0-windows'" />
+    <ProjectReference Include="..\TempMonitor.Sensors.Linux\TempMonitor.Sensors.Linux.csproj"
+                      Condition="'$(TargetFramework)' == 'net8.0'" />
   </ItemGroup>
 
 </Project>

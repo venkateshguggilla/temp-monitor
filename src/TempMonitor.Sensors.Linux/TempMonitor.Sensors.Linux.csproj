@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Linux sensor provider: hwmon/sysfs, /proc, amdgpu, NVML (NVIDIA driver), NVMe, drivetemp.
+       Reads everything without root. Paths are relative to a root folder so tests can use a fake tree. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>TempMonitor</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TempMonitor.Core\TempMonitor.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="TempMonitor.Sensors.Linux.Tests" />
+  </ItemGroup>
+
+</Project>
