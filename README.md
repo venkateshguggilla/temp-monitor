@@ -67,7 +67,7 @@ dotnet run -- ..\..\src\TempMonitor\Assets
 For development without a UAC prompt, build a non-elevated copy. Admin-only sensors will show N/A:
 
 ```
-dotnet build srcTempMonitor.Avalonia -p:AsInvoker=true -o builddev
+dotnet build src\TempMonitor.Avalonia -p:AsInvoker=true -o build\dev
 ```
 
 Sensors are read with [LibreHardwareMonitorLib](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) 0.9.6 (MPL-2.0).
