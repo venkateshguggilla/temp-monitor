@@ -1,0 +1,63 @@
+<Window x:Class="TempMonitor.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Temp Monitor" Width="760" Height="760" MinWidth="400" MinHeight="300"
+        Background="{StaticResource WindowBg}" WindowStartupLocation="CenterScreen"
+        FontFamily="Segoe UI" Icon="Assets/app.ico">
+    <DockPanel>
+        <!-- Toolbar -->
+        <DockPanel DockPanel.Dock="Top" Margin="20,14,20,4">
+            <Image Source="Assets/logo.png" Width="28" Height="28" Margin="0,0,10,0" VerticalAlignment="Center"
+                   RenderOptions.BitmapScalingMode="HighQuality"/>
+            <TextBlock Text="Temp Monitor" FontSize="18" FontWeight="SemiBold"
+                       Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="RunAsAdminButton" Click="OnRunAsAdmin" Visibility="Collapsed"
+                        Background="#33F5B83D" BorderBrush="{StaticResource WarmBrush}"
+                        ToolTip="Restart Temp Monitor with administrator rights (needed for CPU, RAM and drive temperatures)">
+                    <StackPanel Orientation="Horizontal">
+                        <!-- Segoe MDL2 Assets "Shield" glyph -->
+                        <TextBlock Text="&#xEA18;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource WarmBrush}"
+                                   VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBlock Text="Run as admin" Foreground="{StaticResource WarmBrush}" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button Content="All sensors" Click="OnShowAllSensors"/>
+                <Button Content="Save diagnostics" Click="OnSaveDiagnostics"/>
+            </StackPanel>
+        </DockPanel>
+
+        <!-- Options -->
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="58,2,20,4">
+            <CheckBox x:Name="FahrenheitBox" Content="°F" Click="OnOptionChanged" Margin="0"/>
+            <CheckBox x:Name="TopmostBox" Content="Always on top" Click="OnOptionChanged"/>
+            <CheckBox x:Name="AutoStartBox" Content="Start with Windows" Click="OnAutoStartChanged" IsEnabled="False"/>
+        </StackPanel>
+
+        <!-- Status line -->
+        <TextBlock x:Name="StatusText" DockPanel.Dock="Bottom" Margin="20,4,20,12" FontSize="11"
+                   Foreground="{StaticResource TextMuted}" TextWrapping="Wrap"/>
+
+        <!-- Warning banner (shown when temps are blocked by a missing driver / elevation) -->
+        <Border x:Name="WarningBanner" DockPanel.Dock="Top" Margin="20,8,20,0" Padding="12,8"
+                CornerRadius="6" Background="#33F5B83D" Visibility="Collapsed">
+            <DockPanel>
+                <Button x:Name="InstallPawnIoButton" DockPanel.Dock="Right" Content="Install PawnIO"
+                        Click="OnInstallPawnIo" Visibility="Collapsed" VerticalAlignment="Center"/>
+                <TextBlock x:Name="WarningText" Foreground="{StaticResource WarmBrush}" TextWrapping="Wrap"
+                           FontSize="12" VerticalAlignment="Center"/>
+            </DockPanel>
+        </Border>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="12,4,12,0" Background="{StaticResource WindowBg}">
+            <ScrollViewer.Resources>
+                <Style TargetType="ScrollBar">
+                    <Setter Property="Opacity" Value="0.35"/>
+                    <Setter Property="Width" Value="8"/>
+                    <Setter Property="MinWidth" Value="8"/>
+                </Style>
+            </ScrollViewer.Resources>
+            <WrapPanel x:Name="Cards" HorizontalAlignment="Center"/>
+        </ScrollViewer>
+    </DockPanel>
+</Window>
