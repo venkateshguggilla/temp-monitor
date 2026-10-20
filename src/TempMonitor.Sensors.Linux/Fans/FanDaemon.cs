@@ -5,19 +5,6 @@ using System.Text.Json;
 
 namespace TempMonitor.Fans;
 
-/// <summary>A request from a client (one JSON object per line on the socket).</summary>
-public sealed class FanRequest
-{
-    /// <summary>status, set, profile, rename, identify, safety</summary>
-    public string Cmd { get; set; } = "status";
-    public string? Key { get; set; }
-    public string? Name { get; set; }
-    public FanSetting? Setting { get; set; }
-    public SafetySettings? Safety { get; set; }
-}
-
-public sealed record FanResponse(bool Ok, string? Error, DaemonStatus? Status);
-
 /// <summary>Who is asking, from the socket's peer credentials.</summary>
 internal readonly record struct Peer(int Pid, int Uid);
 
@@ -80,7 +67,7 @@ internal sealed class PolkitAuthorizer : IAuthorizer
 /// </summary>
 internal sealed class FanDaemon
 {
-    public const string SocketPath = "/run/temp-monitor/fans.sock";
+    public const string SocketPath = FanClient.SocketPath;
     public const string ConfigPath = "/etc/temp-monitor/fans.json";
     public const string RestorePath = "/run/temp-monitor/fan-restore.json";
     public const string ControlAction = "com.github.venkateshguggilla.tempmonitor.fan-control";
@@ -287,35 +274,6 @@ internal sealed class FanDaemon
         catch (SocketException)
         {
             return new Peer(-1, -1); // unknown: polkit will refuse
-        }
-    }
-}
-
-/// <summary>Talks to the fan service: used by the app and by "temp-monitor fan ..." in a terminal.</summary>
-public static class FanClient
-{
-    public static FanResponse Send(FanRequest request, string socketPath = FanDaemon.SocketPath)
-    {
-        try
-        {
-            using var s = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
-            s.Connect(new UnixDomainSocketEndPoint(socketPath));
-            using var stream = new NetworkStream(s);
-            using var writer = new StreamWriter(stream, new UTF8Encoding(false)) { AutoFlush = true, NewLine = "\n" };
-            using var reader = new StreamReader(stream, Encoding.UTF8);
-            writer.WriteLine(JsonSerializer.Serialize(request, FanConfig.Compact));
-            var line = reader.ReadLine();
-            return line == null
-                ? new FanResponse(false, "The fan service closed the connection", null)
-                : JsonSerializer.Deserialize<FanResponse>(line, FanConfig.Json) ?? new FanResponse(false, "Empty answer", null);
-        }
-        catch (SocketException)
-        {
-            return new FanResponse(false, "The fan service isn't running (systemctl status temp-monitor-fans)", null);
-        }
-        catch (Exception e) when (e is IOException or JsonException)
-        {
-            return new FanResponse(false, "Fan service error: " + e.Message, null);
         }
     }
 }

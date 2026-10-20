@@ -2,14 +2,6 @@ using System.Text.Json;
 
 namespace TempMonitor.Fans;
 
-/// <summary>One fan as the daemon reports it to clients.</summary>
-public sealed record FanStatus(string Key, string Name, string Device, float? Rpm, float? Percent,
-    FanControlMode Mode, float? Target, bool HasControl, bool Stalled, string? Error, FanSetting Setting);
-
-/// <summary>Everything a client shows: profile, safety limits and every fan.</summary>
-public sealed record DaemonStatus(string Profile, IReadOnlyList<string> Profiles, SafetySettings Safety,
-    bool Critical, List<FanStatus> Fans, string? Note);
-
 /// <summary>
 /// The control loop. Every <see cref="Tick"/> reads temperatures and fans, works out each fan's
 /// duty from the active profile and enforces the safety rules:
@@ -115,8 +107,9 @@ internal sealed class FanController
             }
 
             UpdateStall(fan, st, target, now);
+            var curveTemp = setting.Mode == FanControlMode.Curve ? SourceTemperature(setting.Sources, readings) : null;
             fans.Add(new FanStatus(fan.Key, Config.Names.GetValueOrDefault(fan.Key, fan.Name), fan.Device,
-                fan.Rpm, fan.Percent, setting.Mode, target, fan.HasControl, st.Stalled, st.Error, setting));
+                fan.Rpm, fan.Percent, setting.Mode, target, fan.HasControl, st.Stalled, st.Error, setting, curveTemp));
         }
 
         return _last = new DaemonStatus(Config.Profile, FanConfig.Profiles, safety.Clone(), critical, fans,

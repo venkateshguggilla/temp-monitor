@@ -109,7 +109,7 @@ public sealed class FanConfig
         fanKey.StartsWith("hwmon:radeon@", StringComparison.Ordinal) ||
         fanKey.StartsWith("hwmon:nouveau@", StringComparison.Ordinal);
 
-    internal static readonly JsonSerializerOptions Json = new()
+    public static readonly JsonSerializerOptions Json = new()
     {
         WriteIndented = true,
         PropertyNameCaseInsensitive = true,
@@ -117,7 +117,7 @@ public sealed class FanConfig
     };
 
     /// <summary>One line per message on the socket.</summary>
-    internal static readonly JsonSerializerOptions Compact = new(Json) { WriteIndented = false };
+    public static readonly JsonSerializerOptions Compact = new(Json) { WriteIndented = false };
 
     /// <summary>Loads the config; a missing or damaged file gives the defaults (everything Auto).</summary>
     public static FanConfig Load(string path)

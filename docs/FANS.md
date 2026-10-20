@@ -14,6 +14,21 @@ A fresh install changes nothing. The default profile is **Auto**, which leaves e
 
 Changing one fan's setting switches to Custom. Every other fan keeps doing what the previous profile had it do.
 
+## In the app
+
+When the fan service is running, the **Fans** card adds:
+- **A profile picker** in its header.
+- **An Edit button on each fan you can control**, which opens the fan's settings:
+  - its name;
+  - **Auto (firmware)**, **Fixed speed** or **Curve**;
+  - for Curve: a graph you drag to set the speeds, the temperatures it follows (CPU, GPU, drives, RAM) and the hysteresis;
+  - **Identify**, which runs the fan at full speed for 5 seconds so you can tell which one it is.
+- **Safety limits…**, for the minimum speed and the critical CPU and GPU temperatures. Lowering a limit brings up the administrator prompt.
+
+Problems show in red on the fan's row: a stalled fan, a missing temperature, or a speed that couldn't be set. A critical temperature shows at the bottom of the card. Without the service (Windows, or the service stopped) the card is read-only.
+
+For UI development on Windows, a dev build (`-p:AsInvoker=true`) started with `TEMPMONITOR_FAKE_FANS=1` uses a stand-in service with a desktop's fans.
+
 ## From a terminal
 
 ```

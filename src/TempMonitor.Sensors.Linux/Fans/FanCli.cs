@@ -28,7 +28,7 @@ public static class FanCli
             return 0;
         }
 
-        var status = FanClient.Send(new FanRequest { Cmd = "status" });
+        var status = FanClient.Send(new FanRequest { Cmd = "status" }, FanClient.SocketPath);
         if (!status.Ok || status.Status == null)
         {
             output.WriteLine(status.Error);
@@ -47,7 +47,7 @@ public static class FanCli
             return 2;
         }
 
-        var resp = req.Cmd == "status" ? status : FanClient.Send(req);
+        var resp = req.Cmd == "status" ? status : FanClient.Send(req, FanClient.SocketPath);
         if (!resp.Ok || resp.Status == null)
         {
             output.WriteLine(resp.Error);
