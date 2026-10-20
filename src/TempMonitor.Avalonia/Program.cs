@@ -19,6 +19,9 @@ internal static class Program
             return TempMonitor.Fans.FanService.Restore();
         if (args.Length > 0 && args[0] == "fan")
             return TempMonitor.Fans.FanCli.Run(args[1..], Console.Out);
+        // History and overheat alerts while logged in (systemd user service)
+        if (args.Contains("--monitor"))
+            return MonitorHost.Run();
 #endif
 
         // One copy only: a second launch asks the first one to show its window, then exits.

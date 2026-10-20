@@ -56,6 +56,8 @@
                       Condition="'$(TargetFramework)' == 'net8.0-windows'" />
     <ProjectReference Include="..\TempMonitor.Sensors.Linux\TempMonitor.Sensors.Linux.csproj"
                       Condition="'$(TargetFramework)' == 'net8.0'" />
+    <ProjectReference Include="..\TempMonitor.History\TempMonitor.History.csproj"
+                      Condition="'$(TargetFramework)' == 'net8.0'" />
   </ItemGroup>
 
 </Project>

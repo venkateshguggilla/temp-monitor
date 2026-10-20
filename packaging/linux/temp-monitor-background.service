@@ -1,0 +1,20 @@
+# Temp Monitor background monitor (systemd user service): records temperature, usage and fan
+# history (~/.local/state/temp-monitor/history.db) and notifies on overheating or a stalled fan,
+# whether or not the app is open. Settings: ~/.config/temp-monitor/monitor.json
+[Unit]
+Description=Temp Monitor background monitor (history and overheat alerts)
+Documentation=https://github.com/venkateshguggilla/temp-monitor
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/lib/temp-monitor/TempMonitor --monitor
+Restart=on-failure
+RestartSec=10
+# A background job: give way to whatever the user is doing
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=graphical-session.target
