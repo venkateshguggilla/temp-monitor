@@ -32,6 +32,17 @@ Stored in `~/.local/state/temp-monitor/history.db` (SQLite). Nothing leaves the 
 
 Samples are written every 10 seconds in one transaction, which keeps disk writes low.
 
+### In the app
+
+Open the history with **History** in the toolbar, or by clicking a card's 2-minute graph, which shows that component's history first. The window has:
+- **Ranges:** 5 min, 1 hour, 24 hours, 7 days or 30 days. Short ranges refresh every 2 seconds.
+- **The chart:** a min–max band with the average line. For temperatures there's a dashed line at the component's "hot" level. Hover to read exact values. Gaps mean nothing was recorded, for example while the computer was off.
+- **Compare with:** draws a second series on its own right-hand axis, for example CPU temperature against fan speed.
+- **Summary:** min, average and max for the range, and how long the component was at or above hot. That time is counted from the finest data kept (seconds for the last 2 hours, minutes beyond), so a short hot spell still shows on a 30-day chart.
+- **Alerts in this range**, newest first.
+- **Export CSV…** saves the range in full detail.
+- **Clear history…** deletes everything recorded, after asking first.
+
 ## Settings
 
 `~/.config/temp-monitor/monitor.json` (all optional):

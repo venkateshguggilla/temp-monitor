@@ -272,3 +272,75 @@ public class BackgroundMonitorTests
         Assert.Equal(2, rig.Store.Events(T0, T0.AddMinutes(1)).Count);
     }
 }
+
+public class MetricInfoTests
+{
+    private static readonly DateTime T0 = new(2026, 10, 20, 12, 0, 0, DateTimeKind.Utc);
+
+    [Theory]
+    [InlineData("cpu:0/temp", "°C", 95f)]
+    [InlineData("gpu:card1/temp", "°C", 90f)]
+    [InlineData("disk:nvme0n1/temp", "°C", 70f)]
+    [InlineData("ram/temp", "°C", 80f)]
+    [InlineData("cpu:0/usage", "%", null)]
+    [InlineData("fan:nvml:00000000:01:00.0/0/rpm", "RPM", null)]
+    public void Units_and_hot_levels_follow_the_metric_name(string metric, string unit, float? hot)
+    {
+        Assert.Equal(unit, MetricInfo.Unit(metric));
+        Assert.Equal(hot, MetricInfo.HotAt(metric));
+    }
+
+    [Fact]
+    public void Summary_has_min_avg_max()
+    {
+        var points = new List<HistoryPoint>
+        {
+            new(T0, 80, 78, 84),
+            new(T0.AddMinutes(1), 96, 90, 99),
+            new(T0.AddMinutes(2), 97, 95, 101),
+            new(T0.AddMinutes(3), 90, 88, 94),
+        };
+        var s = MetricInfo.Summarize(points, TimeSpan.FromMinutes(2))!;
+        Assert.Equal(78, s.Min);
+        Assert.Equal(90.75f, s.Avg, 3);
+        Assert.Equal(101, s.Max);
+        Assert.Equal(TimeSpan.FromMinutes(2), s.AboveHot);
+        Assert.Null(MetricInfo.Summarize(new List<HistoryPoint>(), TimeSpan.Zero));
+    }
+
+    [Fact]
+    public void A_short_hot_spell_is_counted_even_on_a_30_day_range()
+    {
+        using var tmp = new TempDb();
+        using var s = new HistoryStore(tmp.Path);
+        for (var m = 0; m < 24 * 60; m++) // a day of minutes at 55 °C with a 20-minute spell at 98 °C
+            s.Append(T0.AddMinutes(m), new[] { ("cpu:0/temp", "CPU temperature", m is >= 600 and < 620 ? 98f : 55f) });
+        s.Flush();
+        var now = T0.AddDays(2);
+        Assert.Equal(TimeSpan.FromMinutes(20), s.TimeAtOrAbove("cpu:0/temp", now.AddDays(-30), now, 95, now));
+        // The 30-day chart's points each cover hours, so their averages never reach 95 °C
+        Assert.All(s.Query("cpu:0/temp", now.AddDays(-30), now, 400, now), p => Assert.True(p.Avg < 95));
+
+        for (var i = 0; i < 90; i++) // the last 90 s at 96 °C: counted per second
+            s.Append(now.AddSeconds(-90 + i), new[] { ("cpu:0/temp", "CPU temperature", 96f) });
+        s.Flush();
+        Assert.Equal(TimeSpan.FromSeconds(90), s.TimeAtOrAbove("cpu:0/temp", now.AddMinutes(-5), now, 95, now));
+    }
+
+    [Fact]
+    public void Bucket_width_is_seconds_for_recent_ranges_and_minutes_beyond()
+    {
+        Assert.Equal(TimeSpan.FromSeconds(1), HistoryStore.BucketWidth(T0.AddMinutes(-5), T0, 300, now: T0));
+        Assert.Equal(TimeSpan.FromSeconds(12), HistoryStore.BucketWidth(T0.AddHours(-1), T0, 300, now: T0));
+        Assert.Equal(TimeSpan.FromSeconds(288), HistoryStore.BucketWidth(T0.AddDays(-1), T0, 300, now: T0));
+        Assert.Equal(TimeSpan.FromMinutes(1), HistoryStore.BucketWidth(T0.AddDays(-1), T0.AddDays(-1).AddMinutes(10), 300, now: T0));
+    }
+
+    [Theory]
+    [InlineData(45, "45 s")]
+    [InlineData(600, "10 min")]
+    [InlineData(5400, "1 h 30 min")]
+    [InlineData(93600, "1 d 2 h")]
+    public void Durations_read_naturally(int seconds, string text) =>
+        Assert.Equal(text, MetricInfo.Duration(TimeSpan.FromSeconds(seconds)));
+}

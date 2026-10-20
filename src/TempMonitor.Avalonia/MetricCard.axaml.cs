@@ -14,6 +14,17 @@ public partial class MetricCard : UserControl
     {
         InitializeComponent();
         ChartArea.SizeChanged += (_, _) => DrawHistory();
+        // The 2-minute graph opens the full history of this component
+        if (HistoryButton.Available)
+        {
+            ChartArea.Background = Brushes.Transparent; // clickable between the lines too
+            ChartArea.Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand);
+            ToolTip.SetTip(ChartArea, "Open the history");
+            ChartArea.PointerPressed += (_, _) =>
+            {
+                if (_last is { } r) HistoryButton.Open(this, r.Temperature.HasValue ? $"{r.Key}/temp" : $"{r.Key}/usage");
+            };
+        }
         UsageTrack.SizeChanged += (_, _) => SetBar(UsageTrack, UsageBar, _usage);
         SecondaryTrack.SizeChanged += (_, _) => SetBar(SecondaryTrack, SecondaryBar, _secondary);
     }

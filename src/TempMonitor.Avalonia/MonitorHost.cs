@@ -13,13 +13,9 @@ namespace TempMonitor.App;
 /// </summary>
 internal static class MonitorHost
 {
-    private static string Xdg(string variable, string fallback) =>
-        Environment.GetEnvironmentVariable(variable) is { Length: > 0 } v ? v
-        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), fallback);
-
-    public static string StateDir => Path.Combine(Xdg("XDG_STATE_HOME", ".local/state"), "temp-monitor");
-    public static string HistoryPath => Path.Combine(StateDir, "history.db");
-    public static string SettingsPath => Path.Combine(Xdg("XDG_CONFIG_HOME", ".config"), "temp-monitor", "monitor.json");
+    private static string StateDir => HistoryPaths.StateDir;
+    private static string HistoryPath => HistoryPaths.HistoryDb!;
+    private static string SettingsPath => HistoryPaths.MonitorSettings;
 
     public static int Run()
     {

@@ -11,6 +11,10 @@ internal static class Program
     {
         if (args.Contains("--print"))
             return PrintReadings();
+#if DEV_INSTANCE
+        if (args.Length == 2 && args[0] == "--make-demo-history")
+            return DemoHistory.Make(args[1]);
+#endif
 #if !WINDOWS
         // Fan control: the root service (systemd) and its terminal client
         if (args.Contains("--fan-daemon"))

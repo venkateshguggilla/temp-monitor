@@ -172,8 +172,8 @@ public sealed class HistoryStore : IDisposable
     public List<HistoryPoint> Query(string metric, DateTime from, DateTime to, int maxPoints = 300, DateTime? now = null)
     {
         long f = Unix(from), t = Unix(to);
-        var useRaw = from >= (now ?? DateTime.UtcNow) - RawRetention && to - from <= RawRetention;
-        var width = Math.Max(useRaw ? 1 : 60, (long)Math.Ceiling((t - f) / (double)Math.Max(1, maxPoints)));
+        var useRaw = UsesRaw(from, to, now);
+        var width = (long)BucketWidth(from, to, maxPoints, now).TotalSeconds;
         using var cmd = _db.CreateCommand();
         cmd.CommandText = useRaw
             ? """
@@ -193,6 +193,36 @@ public sealed class HistoryStore : IDisposable
         while (r.Read())
             points.Add(new HistoryPoint(FromUnix(r.GetInt64(0)), (float)r.GetDouble(1), (float)r.GetDouble(2), (float)r.GetDouble(3)));
         return points;
+    }
+
+    /// <summary>
+    /// How long a metric was at or above <paramref name="threshold"/> in the range, from the finest
+    /// data kept (seconds within the last 2 hours, minute averages beyond), so a short hot spell
+    /// isn't averaged away on a 30-day chart.
+    /// </summary>
+    public TimeSpan TimeAtOrAbove(string metric, DateTime from, DateTime to, float threshold, DateTime? now = null)
+    {
+        var raw = UsesRaw(from, to, now);
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = raw
+            ? "SELECT count(*) FROM raw r JOIN metric m ON m.id = r.metric WHERE m.name = $n AND r.ts BETWEEN $f AND $t AND r.v >= $h"
+            : "SELECT count(*) FROM minute x JOIN metric m ON m.id = x.metric WHERE m.name = $n AND x.ts BETWEEN $f AND $t AND x.avg >= $h";
+        cmd.Parameters.AddWithValue("$n", metric);
+        cmd.Parameters.AddWithValue("$f", Unix(from));
+        cmd.Parameters.AddWithValue("$t", Unix(to));
+        cmd.Parameters.AddWithValue("$h", threshold);
+        var count = (long)cmd.ExecuteScalar()!;
+        return raw ? TimeSpan.FromSeconds(count) : TimeSpan.FromMinutes(count);
+    }
+
+    private static bool UsesRaw(DateTime from, DateTime to, DateTime? now) =>
+        from >= (now ?? DateTime.UtcNow) - RawRetention && to - from <= RawRetention;
+
+    /// <summary>How much time each point of <see cref="Query"/> covers for this range.</summary>
+    public static TimeSpan BucketWidth(DateTime from, DateTime to, int maxPoints = 300, DateTime? now = null)
+    {
+        var seconds = (long)Math.Ceiling((to - from).TotalSeconds / Math.Max(1, maxPoints));
+        return TimeSpan.FromSeconds(Math.Max(UsesRaw(from, to, now) ? 1 : 60, seconds));
     }
 
     public List<HistoryEvent> Events(DateTime from, DateTime to)
@@ -215,7 +245,9 @@ public sealed class HistoryStore : IDisposable
         _pendingMinute.Clear();
         _acc.Clear();
         Exec("DELETE FROM raw; DELETE FROM minute; DELETE FROM event;");
-        Exec("VACUUM");
+        // Give the space back; skipped if the background monitor is writing at this moment
+        try { Exec("VACUUM"); }
+        catch (SqliteException) { }
     }
 
     public void Dispose()

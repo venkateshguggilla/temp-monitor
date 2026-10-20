@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:app="using:TempMonitor.App"
         x:Class="TempMonitor.App.MainWindow"
         Title="Temp Monitor" Width="760" Height="760" MinWidth="400" MinHeight="300"
         Background="{StaticResource WindowBg}" WindowStartupLocation="CenterScreen"
@@ -17,6 +18,7 @@
                         ToolTip.Tip="Restart Temp Monitor with administrator rights (needed for CPU, RAM and drive temperatures)">
                     <TextBlock Text="🛡 Run as admin" Foreground="{StaticResource WarmBrush}"/>
                 </Button>
+                <app:HistoryButton Classes="toolbar"/>
                 <Button Classes="toolbar" Content="All sensors" Click="OnShowAllSensors"/>
                 <Button x:Name="SaveDiagnosticsButton" Classes="toolbar" Content="Save diagnostics" Click="OnSaveDiagnostics"/>
             </StackPanel>
