@@ -236,13 +236,39 @@ public class FanControlTests
     private sealed class FakeAuthorizer : IAuthorizer
     {
         public List<string> Asked { get; } = new();
+        public List<string> Changes { get; } = new();
         public bool Allow { get; set; } = true;
 
-        public bool Check(string action, Peer peer)
+        public bool Check(string action, Peer peer, string change)
         {
             Asked.Add(action);
+            Changes.Add(change);
             return Allow;
         }
+    }
+
+    [Fact]
+    public void The_approval_prompt_says_what_will_change()
+    {
+        using var f = Desktop();
+        var c = Controller(f);
+        c.Tick();
+        var auth = new FakeAuthorizer();
+        var daemon = new FanDaemon(c, auth);
+        daemon.Handle(new FanRequest { Cmd = "rename", Key = Fan1, Name = "CPU cooler" }, User);
+        daemon.Handle(new FanRequest { Cmd = "set", Key = Fan1, Setting = Fixed(60) }, User);
+        daemon.Handle(new FanRequest { Cmd = "profile", Name = "Silent" }, User);
+        daemon.Handle(new FanRequest { Cmd = "identify", Key = GpuFan }, User);
+        daemon.Handle(new FanRequest { Cmd = "safety", Safety = new SafetySettings { FloorPercent = 10, CriticalCpu = 95, CriticalGpu = 90 } }, User);
+        Assert.Equal(new[]
+        {
+            "rename Fan 1 to \"CPU cooler\"",
+            "set CPU cooler to a fixed 60%",
+            "switch the fan profile to Silent",
+            "run GPU fan at full speed for 5 seconds",
+            "minimum fan speed 10%, all fans to full speed at CPU 95 °C or GPU 90 °C",
+        }, auth.Changes);
+        Assert.Equal(FanDaemon.SafetyAction, auth.Asked.Last()); // lowering the floor
     }
 
     private static readonly Peer User = new(1234, 1000);

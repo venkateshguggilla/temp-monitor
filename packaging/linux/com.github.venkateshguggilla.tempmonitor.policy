@@ -9,7 +9,7 @@
   <!-- Profiles, fan modes, curves, names, identify: the person at the computer, no password -->
   <action id="com.github.venkateshguggilla.tempmonitor.fan-control">
     <description>Change fan profiles and fan speeds</description>
-    <message>Authentication is required to change fan settings</message>
+    <message>Temp Monitor wants to change fan settings: $(change)</message>
     <defaults>
       <allow_any>auth_admin</allow_any>
       <allow_inactive>auth_admin</allow_inactive>
@@ -20,7 +20,7 @@
   <!-- A lower minimum speed or a higher critical temperature can let the computer overheat -->
   <action id="com.github.venkateshguggilla.tempmonitor.fan-safety">
     <description>Lower fan safety limits</description>
-    <message>Lowering the fan safety limits (minimum speed or critical temperature) can let the computer overheat. Authentication is required.</message>
+    <message>Temp Monitor wants to lower a fan safety limit, which can let the computer overheat: $(change)</message>
     <defaults>
       <allow_any>auth_admin</allow_any>
       <allow_inactive>auth_admin</allow_inactive>

@@ -11,7 +11,8 @@ internal readonly record struct Peer(int Pid, int Uid);
 /// <summary>Decides whether a peer may perform a polkit action.</summary>
 internal interface IAuthorizer
 {
-    bool Check(string action, Peer peer);
+    /// <param name="change">What will change, in words; shown in the approval prompt ($(change) in the policy).</param>
+    bool Check(string action, Peer peer, string change);
 }
 
 /// <summary>
@@ -20,7 +21,7 @@ internal interface IAuthorizer
 /// </summary>
 internal sealed class PolkitAuthorizer : IAuthorizer
 {
-    public bool Check(string action, Peer peer)
+    public bool Check(string action, Peer peer, string change)
     {
         if (peer.Uid == 0) return true;
         var startTime = ProcessStartTime(peer.Pid);
@@ -29,7 +30,11 @@ internal sealed class PolkitAuthorizer : IAuthorizer
         {
             var psi = new ProcessStartInfo("pkcheck")
             {
-                ArgumentList = { "--action-id", action, "--process", $"{peer.Pid},{startTime},{peer.Uid}", "--allow-user-interaction" },
+                ArgumentList =
+                {
+                    "--action-id", action, "--process", $"{peer.Pid},{startTime},{peer.Uid}",
+                    "--detail", "change", change, "--allow-user-interaction",
+                },
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
             };
@@ -98,7 +103,7 @@ internal sealed class FanDaemon
             _ => "",
         };
         if (action == "") return new FanResponse(false, $"Unknown command '{req.Cmd}'", null);
-        if (action != null && !_auth.Check(action, peer))
+        if (action != null && !_auth.Check(action, peer, Describe(req)))
             return new FanResponse(false, action == SafetyAction
                 ? "Lowering a fan safety limit needs administrator approval"
                 : "Not authorized to change fan settings", null);
@@ -158,6 +163,32 @@ internal sealed class FanDaemon
             }
             return new FanResponse(true, null, _controller.Tick());
         }
+    }
+
+    /// <summary>The change in words for the approval prompt, e.g. "set CPU cooler to a fixed 60%".</summary>
+    internal string Describe(FanRequest req)
+    {
+        string Fan(string? key)
+        {
+            lock (_lock)
+                return _controller.LastStatus?.Fans.FirstOrDefault(f => f.Key == key)?.Name ?? key ?? "a fan";
+        }
+
+        return req.Cmd switch
+        {
+            "profile" => $"switch the fan profile to {req.Name}",
+            "rename" => string.IsNullOrWhiteSpace(req.Name) ? $"reset the name of {Fan(req.Key)}" : $"rename {Fan(req.Key)} to \"{req.Name?.Trim()}\"",
+            "identify" => $"run {Fan(req.Key)} at full speed for 5 seconds",
+            "set" => req.Setting?.Mode switch
+            {
+                FanControlMode.Fixed => $"set {Fan(req.Key)} to a fixed {req.Setting.Percent:0}%",
+                FanControlMode.Curve => $"let {Fan(req.Key)} follow a temperature curve",
+                _ => $"give {Fan(req.Key)} back to the BIOS / firmware",
+            },
+            "safety" when req.Safety is { } s =>
+                $"minimum fan speed {s.FloorPercent:0}%, all fans to full speed at CPU {s.CriticalCpu:0} °C or GPU {s.CriticalGpu:0} °C",
+            _ => req.Cmd,
+        };
     }
 
     private SafetySettings CurrentSafety()
