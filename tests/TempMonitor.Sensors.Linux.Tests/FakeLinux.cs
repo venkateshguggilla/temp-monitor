@@ -58,4 +58,14 @@ internal sealed class FakeNvml : INvml
         unavailableReason = Gpus == null ? Reason : null;
         return Gpus;
     }
+
+    /// <summary>Every SetFanSpeed call: (bus id, fan, percent or null for automatic).</summary>
+    public List<(string BusId, int Fan, int? Percent)> FanCalls { get; } = new();
+
+    public bool SetFanSpeed(string pciBusId, int fan, int? percent, out string? error)
+    {
+        FanCalls.Add((pciBusId, fan, percent));
+        error = null;
+        return true;
+    }
 }

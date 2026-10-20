@@ -11,6 +11,15 @@ internal static class Program
     {
         if (args.Contains("--print"))
             return PrintReadings();
+#if !WINDOWS
+        // Fan control: the root service (systemd) and its terminal client
+        if (args.Contains("--fan-daemon"))
+            return TempMonitor.Fans.FanService.RunDaemon();
+        if (args.Contains("--fan-restore"))
+            return TempMonitor.Fans.FanService.Restore();
+        if (args.Length > 0 && args[0] == "fan")
+            return TempMonitor.Fans.FanCli.Run(args[1..], Console.Out);
+#endif
 
         // One copy only: a second launch asks the first one to show its window, then exits.
         if (!Platform.Current.TryAcquireSingleInstance(waitForPrevious: args.Contains(Platform.RelaunchArg)))

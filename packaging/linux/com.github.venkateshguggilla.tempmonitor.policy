@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!-- Temp Monitor fan control (checked by temp-monitor-fans.service) -->
+<policyconfig>
+  <vendor>Temp Monitor</vendor>
+  <vendor_url>https://github.com/venkateshguggilla/temp-monitor</vendor_url>
+
+  <!-- Profiles, fan modes, curves, names, identify: the person at the computer, no password -->
+  <action id="com.github.venkateshguggilla.tempmonitor.fan-control">
+    <description>Change fan profiles and fan speeds</description>
+    <message>Authentication is required to change fan settings</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+  </action>
+
+  <!-- A lower minimum speed or a higher critical temperature can let the computer overheat -->
+  <action id="com.github.venkateshguggilla.tempmonitor.fan-safety">
+    <description>Lower fan safety limits</description>
+    <message>Lowering the fan safety limits (minimum speed or critical temperature) can let the computer overheat. Authentication is required.</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+</policyconfig>

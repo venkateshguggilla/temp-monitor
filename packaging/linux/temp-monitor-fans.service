@@ -1,0 +1,41 @@
+# Temp Monitor fan control (root). Profile "Auto" (the default) leaves every fan to firmware,
+# so running this changes nothing until a fan profile or setting is chosen.
+[Unit]
+Description=Temp Monitor fan control
+Documentation=https://github.com/venkateshguggilla/temp-monitor
+After=systemd-modules-load.service
+
+[Service]
+Type=simple
+ExecStart=/usr/lib/temp-monitor/TempMonitor --fan-daemon
+# Crash or kill: hand every fan back to firmware from the restore file
+ExecStopPost=/usr/lib/temp-monitor/TempMonitor --fan-restore
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+# /run/temp-monitor: socket + restore file (kept until ExecStopPost has used it)
+RuntimeDirectory=temp-monitor
+RuntimeDirectoryPreserve=yes
+# /etc/temp-monitor/fans.json
+ConfigurationDirectory=temp-monitor
+
+# Hardening: fan control needs root, /sys (writable under ProtectSystem=strict) and the GPU
+# device nodes for NVML; no network, no home folders, nothing else writable.
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateNetwork=yes
+RestrictAddressFamilies=AF_UNIX
+NoNewPrivileges=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

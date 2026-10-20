@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+using TempMonitor.Fans;
 
 namespace TempMonitor;
 
@@ -25,6 +26,13 @@ public sealed class LinuxSensorProvider : ISensorProvider
 
     // NVIDIA GPUs from the latest Read(), so fans don't query NVML a second time
     private IReadOnlyList<NvGpu>? _lastNvidia;
+
+    // How to control each fan found by the latest ReadFans(), for the fan daemon
+    private Dictionary<string, FanChannel> _channels = new();
+    internal IReadOnlyDictionary<string, FanChannel> Channels { get { lock (_lock) return _channels; } }
+
+    internal Sysfs Fs => _fs;
+    internal INvml Nvml => _nvml;
 
     public LinuxSensorProvider() : this("/", null, null, null) { }
 
@@ -501,6 +509,7 @@ public sealed class LinuxSensorProvider : ISensorProvider
         lock (_lock)
         {
             var fans = new List<FanReading>();
+            var channels = new Dictionary<string, FanChannel>();
             var idleHeaders = 0;
             foreach (var hw in _fs.AllHwmons())
             {
@@ -512,12 +521,18 @@ public sealed class LinuxSensorProvider : ISensorProvider
                 foreach (var i in indexes)
                 {
                     var f = HwmonFan(hw, i, device, chipId, single: indexes.Count == 1);
-                    if (f.Rpm == 0 && SuperIoChips.Contains(hw.Name))
+                    // 0 RPM on a motherboard header: nothing plugged in. Unless software is driving it,
+                    // in which case it may be a stalled fan, which must stay visible.
+                    if (f.Rpm == 0 && SuperIoChips.Contains(hw.Name) && f.Mode != FanMode.Manual)
                     {
-                        idleHeaders++; // nothing plugged into this header
+                        idleHeaders++;
                         continue;
                     }
                     fans.Add(f);
+                    if (f.HasControl)
+                        channels[f.Key] = hw.Name == "applesmc"
+                            ? new FanChannel(ChannelKind.AppleSmc, hw.Dir, i, MinRpm: f.MinRpm, MaxRpm: f.MaxRpm)
+                            : new FanChannel(ChannelKind.Pwm, hw.Dir, i);
                 }
             }
 
@@ -525,6 +540,8 @@ public sealed class LinuxSensorProvider : ISensorProvider
             {
                 var gpuFans = g.Fans ?? Array.Empty<NvFan>();
                 foreach (var nf in gpuFans)
+                {
+                    channels[$"nvml:{g.PciBusId}/{nf.Index}"] = new FanChannel(ChannelKind.Nvml, "", nf.Index, BusId: g.PciBusId);
                     fans.Add(new FanReading
                     {
                         Key = $"nvml:{g.PciBusId}/{nf.Index}",
@@ -535,7 +552,9 @@ public sealed class LinuxSensorProvider : ISensorProvider
                         Mode = nf.Manual switch { true => FanMode.Manual, false => FanMode.Auto, _ => FanMode.Unknown },
                         HasControl = true,
                     });
+                }
             }
+            _channels = channels;
 
             string? note = null;
             if (idleHeaders > 0)
@@ -576,13 +595,13 @@ public sealed class LinuxSensorProvider : ISensorProvider
         }
 
         // PWM channel N drives fan N (hwmon convention): 0–255 duty, pwmN_enable 0 = full, 1 = manual, 2+ = automatic
+        // Control needs pwmN_enable too: without it there is no way to take the fan from firmware
         var pwm = _fs.Long(Path.Combine(hw.Dir, $"pwm{i}"));
+        var enable = _fs.Long(Path.Combine(hw.Dir, $"pwm{i}_enable"));
         if (pwm != null)
-        {
             f.Percent = Math.Clamp(pwm.Value * 100f / 255, 0, 100);
-            f.HasControl = true;
-        }
-        f.Mode = _fs.Long(Path.Combine(hw.Dir, $"pwm{i}_enable")) switch
+        f.HasControl = pwm != null && enable != null;
+        f.Mode = enable switch
         {
             0 => FanMode.Full,
             1 => FanMode.Manual,

@@ -33,6 +33,22 @@ internal sealed class Sysfs
 
     public bool Exists(string path) => File.Exists(path) || Directory.Exists(path);
 
+    /// <summary>Writes a sysfs attribute (fan control). False, with the kernel's reason, if refused.</summary>
+    public bool Write(string path, string value, out string? error)
+    {
+        try
+        {
+            File.WriteAllText(path, value);
+            error = null;
+            return true;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            error = e.Message;
+            return false;
+        }
+    }
+
     public IEnumerable<string> Dirs(string path, string pattern = "*")
     {
         try { return Directory.Exists(path) ? Directory.EnumerateDirectories(path, pattern).OrderBy(d => d, NaturalComparer.Instance).ToList() : Enumerable.Empty<string>(); }

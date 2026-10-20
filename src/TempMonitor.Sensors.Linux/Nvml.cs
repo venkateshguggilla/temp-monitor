@@ -15,6 +15,9 @@ internal interface INvml
 {
     /// <summary>Null when NVML isn't available (no NVIDIA driver), with a reason.</summary>
     IReadOnlyList<NvGpu>? Read(out string? unavailableReason);
+
+    /// <summary>Sets one fan to a fixed speed in %, or back to the driver's automatic control (null). Needs root.</summary>
+    bool SetFanSpeed(string pciBusId, int fan, int? percent, out string? error);
 }
 
 /// <summary>
@@ -106,6 +109,31 @@ internal sealed class Nvml : INvml, IDisposable
         return fans;
     }
 
+    public bool SetFanSpeed(string pciBusId, int fan, int? percent, out string? error)
+    {
+        if (!_initTried) Read(out _);
+        if (!_ready)
+        {
+            error = _reason ?? "NVML not available";
+            return false;
+        }
+        try
+        {
+            var r = Native.nvmlDeviceGetHandleByPciBusId_v2(pciBusId, out var dev);
+            if (r == Success)
+                r = percent is { } p
+                    ? Native.nvmlDeviceSetFanSpeed_v2(dev, (uint)fan, (uint)Math.Clamp(p, 0, 100))
+                    : Native.nvmlDeviceSetDefaultFanSpeed_v2(dev, (uint)fan);
+            error = r == Success ? null : $"NVML error {r}: {Marshal.PtrToStringAnsi(Native.nvmlErrorString(r))}";
+            return r == Success;
+        }
+        catch (EntryPointNotFoundException)
+        {
+            error = "This NVIDIA driver is too old for fan control (needs 520 or newer)";
+            return false;
+        }
+    }
+
     public void Dispose()
     {
         if (_ready)
@@ -148,5 +176,9 @@ internal sealed class Nvml : INvml, IDisposable
         [DllImport(Lib)] public static extern int nvmlDeviceGetFanSpeed_v2(IntPtr device, uint fan, out uint percent);
         [DllImport(Lib)] public static extern int nvmlDeviceGetFanSpeedRPM(IntPtr device, ref FanSpeedInfo info);
         [DllImport(Lib)] public static extern int nvmlDeviceGetFanControlPolicy_v2(IntPtr device, uint fan, out uint policy);
+        [DllImport(Lib, CharSet = CharSet.Ansi)] public static extern int nvmlDeviceGetHandleByPciBusId_v2(string pciBusId, out IntPtr device);
+        [DllImport(Lib)] public static extern int nvmlDeviceSetFanSpeed_v2(IntPtr device, uint fan, uint speed);
+        [DllImport(Lib)] public static extern int nvmlDeviceSetDefaultFanSpeed_v2(IntPtr device, uint fan);
+        [DllImport(Lib)] public static extern IntPtr nvmlErrorString(int result);
     }
 }
