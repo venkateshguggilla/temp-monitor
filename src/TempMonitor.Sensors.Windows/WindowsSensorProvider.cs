@@ -37,7 +37,7 @@ public sealed class WindowsSensorProvider : ISensorProvider
         Warning: !IsElevated
             ? "Not running as administrator. CPU, RAM and drive temperatures need admin rights. Click Run as admin above."
             : !PawnIoInstalled
-                ? "The PawnIO driver isn't installed on this PC, so CPU (and RAM) temperatures can't be read. Install it once, then restart Temp Monitor."
+                ? "The PawnIO driver isn't installed on this PC, so CPU (and RAM) temperatures can't be read. Click Install PawnIO to set it up (once per PC)."
                 : null,
         CanElevate: !IsElevated,
         CanInstallDriver: IsElevated && !PawnIoInstalled);
@@ -53,6 +53,8 @@ public sealed class WindowsSensorProvider : ISensorProvider
             IsGpuEnabled = true,
             IsMemoryEnabled = true,
             IsStorageEnabled = true,
+            IsMotherboardEnabled = true, // Super I/O: motherboard fan headers
+            IsControllerEnabled = true,  // USB fan hubs and AIO coolers
         };
         _computer.Open();
         _diskSignature = DiskInfo.Signature();
@@ -124,7 +126,7 @@ public sealed class WindowsSensorProvider : ISensorProvider
 
     private string DriverHint() =>
         !IsElevated ? "Run as administrator"
-        : !PawnIoInstalled ? "Needs the PawnIO driver (see README)"
+        : !PawnIoInstalled ? "Needs the PawnIO driver: click Install PawnIO above"
         : "Sensor not reported";
 
     // ---------------------------------------------------------------- CPU
@@ -438,6 +440,79 @@ public sealed class WindowsSensorProvider : ISensorProvider
         {
             Debug.WriteLine($"Reliability counter query failed: {ex.Message}");
         }
+    }
+
+    // ---------------------------------------------------------------- Fans
+
+    /// <summary>Fans from the sensor values of the latest <see cref="Read"/> (no extra hardware access).</summary>
+    public FanReport ReadFans()
+    {
+        lock (_lock)
+        {
+            var fans = new List<FanReading>();
+            var idleHeaders = 0;
+            foreach (var hw in _computer.Hardware.SelectMany(Flatten))
+            {
+                var tachs = hw.Sensors.Where(s => s.SensorType == SensorType.Fan).ToList();
+                var controls = hw.Sensors.Where(s => s.SensorType == SensorType.Control).ToList();
+                if (tachs.Count == 0 && controls.Count == 0) continue;
+                var superIo = hw.HardwareType == HardwareType.SuperIO;
+                var used = new HashSet<ISensor>();
+
+                foreach (var tach in tachs)
+                {
+                    // LHM names a fan and its control alike ("Fan #2", "GPU Fan 1"); else pair by channel index
+                    var control = controls.FirstOrDefault(c => !used.Contains(c) && c.Name == tach.Name)
+                                  ?? controls.FirstOrDefault(c => !used.Contains(c) && c.Index == tach.Index);
+                    if (control != null) used.Add(control);
+                    if (superIo && tach.Value is null or 0)
+                    {
+                        idleHeaders++; // nothing plugged into this header
+                        continue;
+                    }
+                    fans.Add(Fan(hw, tach, control, single: tachs.Count == 1));
+                }
+
+                // Channels without a tachometer (pumps, hub outputs); a Super I/O's are just empty headers
+                if (!superIo)
+                    foreach (var control in controls.Where(c => !used.Contains(c) && c.Control != null))
+                        fans.Add(Fan(hw, null, control, single: false));
+            }
+
+            string? note =
+                !IsElevated ? "Motherboard fans need administrator rights: click Run as admin."
+                : !PawnIoInstalled ? "Motherboard fans need the PawnIO driver: click Install PawnIO."
+                : idleHeaders == 1 ? "1 motherboard fan header reads 0 RPM (nothing connected) and is hidden."
+                : idleHeaders > 1 ? $"{idleHeaders} motherboard fan headers read 0 RPM (nothing connected) and are hidden."
+                : fans.Count == 0 ? "No fan sensors found. Many laptops (including Macs in Boot Camp) control their fans in firmware without reporting the speed to Windows."
+                : null;
+            return new FanReport(fans, note);
+        }
+    }
+
+    private static IEnumerable<IHardware> Flatten(IHardware hw) => new[] { hw }.Concat(hw.SubHardware.SelectMany(Flatten));
+
+    private static FanReading Fan(IHardware hw, ISensor? tach, ISensor? control, bool single)
+    {
+        var gpu = GpuTypes.Contains(hw.HardwareType);
+        var name = (tach ?? control)!.Name.Replace(" #", " ");
+        if (gpu)
+            name = single ? "GPU fan" : name.Replace("GPU Fan", "GPU fan");
+        return new FanReading
+        {
+            Key = (tach ?? control)!.Identifier.ToString(),
+            Name = name,
+            Device = hw.HardwareType == HardwareType.SuperIO ? $"Motherboard ({hw.Name})" : hw.Name,
+            Rpm = tach?.Value,
+            Percent = control?.Value,
+            HasControl = control?.Control != null,
+            Mode = control?.Control?.ControlMode switch
+            {
+                ControlMode.Default => FanMode.Auto,
+                ControlMode.Software => FanMode.Manual,
+                _ => FanMode.Unknown,
+            },
+        };
     }
 
     // ---------------------------------------------------------------- Diagnostics

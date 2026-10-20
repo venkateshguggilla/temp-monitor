@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace TempMonitor;
 
@@ -21,6 +22,9 @@ public sealed class LinuxSensorProvider : ISensorProvider
     // Previous samples for rates: CPU jiffies, and per disk (io ticks ms, sectors read, written)
     private (long total, long idle, DateTime at)? _lastCpu;
     private readonly Dictionary<string, (long ticks, long read, long written, DateTime at)> _lastDisk = new();
+
+    // NVIDIA GPUs from the latest Read(), so fans don't query NVML a second time
+    private IReadOnlyList<NvGpu>? _lastNvidia;
 
     public LinuxSensorProvider() : this("/", null, null, null) { }
 
@@ -153,6 +157,7 @@ public sealed class LinuxSensorProvider : ISensorProvider
         IReadOnlyList<NvGpu>? nv = null;
         if (cards.Any(c => Hex(_fs.Text(Path.Combine(c.dev, "vendor"))) == "10de"))
             nv = _nvml.Read(out nvReason);
+        _lastNvidia = nv;
         var nvIndex = 0;
 
         var index = 0;
@@ -475,6 +480,148 @@ public sealed class LinuxSensorProvider : ISensorProvider
         {
             return null;
         }
+    }
+
+    // ---------------------------------------------------------------- Fans
+
+    /// <summary>Motherboard Super I/O chips. Their unused headers read 0 RPM, so those are hidden.</summary>
+    private static readonly HashSet<string> SuperIoChips = new(StringComparer.Ordinal)
+    {
+        "nct6775", "nct6683", "nct6687", "nct7802", "nct7904", "it87", "f71882fg", "f71805f",
+        "w83627ehf", "w83627hf", "w83795", "sch5627", "sch5636",
+    };
+
+    /// <summary>GPU drivers. Their fans legitimately stop when the card is cool ("zero RPM" mode).</summary>
+    private static readonly HashSet<string> GpuChips = new(StringComparer.Ordinal) { "amdgpu", "radeon", "nouveau" };
+
+    private static readonly Regex FanInput = new(@"^fan(\d+)_input$", RegexOptions.Compiled);
+
+    public FanReport ReadFans()
+    {
+        lock (_lock)
+        {
+            var fans = new List<FanReading>();
+            var idleHeaders = 0;
+            foreach (var hw in _fs.AllHwmons())
+            {
+                var indexes = hw.Inputs.Select(i => FanInput.Match(i.File)).Where(m => m.Success)
+                    .Select(m => int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture)).ToList();
+                if (indexes.Count == 0) continue;
+                var device = FanDevice(hw);
+                var chipId = ChipId(hw);
+                foreach (var i in indexes)
+                {
+                    var f = HwmonFan(hw, i, device, chipId, single: indexes.Count == 1);
+                    if (f.Rpm == 0 && SuperIoChips.Contains(hw.Name))
+                    {
+                        idleHeaders++; // nothing plugged into this header
+                        continue;
+                    }
+                    fans.Add(f);
+                }
+            }
+
+            foreach (var g in _lastNvidia ?? Array.Empty<NvGpu>())
+            {
+                var gpuFans = g.Fans ?? Array.Empty<NvFan>();
+                foreach (var nf in gpuFans)
+                    fans.Add(new FanReading
+                    {
+                        Key = $"nvml:{g.PciBusId}/{nf.Index}",
+                        Name = gpuFans.Count > 1 ? $"GPU fan {nf.Index + 1}" : "GPU fan",
+                        Device = g.Name.StartsWith("NVIDIA", StringComparison.Ordinal) ? g.Name : "NVIDIA " + g.Name,
+                        Rpm = nf.Rpm,
+                        Percent = nf.Percent,
+                        Mode = nf.Manual switch { true => FanMode.Manual, false => FanMode.Auto, _ => FanMode.Unknown },
+                        HasControl = true,
+                    });
+            }
+
+            string? note = null;
+            if (idleHeaders > 0)
+                note = idleHeaders == 1
+                    ? "1 motherboard fan header reads 0 RPM (nothing connected) and is hidden."
+                    : $"{idleHeaders} motherboard fan headers read 0 RPM (nothing connected) and are hidden.";
+            else if (fans.Count == 0)
+                note = "No fan sensors found. Desktop motherboards need their Super I/O driver (e.g. nct6775 or it87); " +
+                       "many laptops control their fans in firmware without reporting the speed.";
+            return new FanReport(fans, note);
+        }
+    }
+
+    private FanReading HwmonFan(Hwmon hw, int i, string device, string chipId, bool single)
+    {
+        string F(string suffix) => Path.Combine(hw.Dir, $"fan{i}_{suffix}");
+        var label = _fs.Text(F("label"))?.Trim();
+        var gpu = GpuChips.Contains(hw.Name);
+        var f = new FanReading
+        {
+            Key = $"hwmon:{chipId}/fan{i}",
+            Name = !string.IsNullOrEmpty(label) ? label
+                : gpu ? (single ? "GPU fan" : $"GPU fan {i}")
+                : single ? "Fan" : $"Fan {i}",
+            Device = device,
+            Rpm = hw.Raw($"fan{i}_input"),
+        };
+
+        if (hw.Name == "applesmc")
+        {
+            // Apple SMC: speeds are set in RPM within the firmware's min/max, not by PWM
+            f.MinRpm = _fs.Long(F("min"));
+            f.MaxRpm = _fs.Long(F("max"));
+            var manual = _fs.Long(F("manual"));
+            f.Mode = manual switch { 1 => FanMode.Manual, 0 => FanMode.Auto, _ => FanMode.Unknown };
+            f.HasControl = manual != null;
+            return f;
+        }
+
+        // PWM channel N drives fan N (hwmon convention): 0–255 duty, pwmN_enable 0 = full, 1 = manual, 2+ = automatic
+        var pwm = _fs.Long(Path.Combine(hw.Dir, $"pwm{i}"));
+        if (pwm != null)
+        {
+            f.Percent = Math.Clamp(pwm.Value * 100f / 255, 0, 100);
+            f.HasControl = true;
+        }
+        f.Mode = _fs.Long(Path.Combine(hw.Dir, $"pwm{i}_enable")) switch
+        {
+            0 => FanMode.Full,
+            1 => FanMode.Manual,
+            >= 2 => FanMode.Auto,
+            _ => FanMode.Unknown,
+        };
+        return f;
+    }
+
+    /// <summary>What a hwmon chip's fans belong to, in words.</summary>
+    private string FanDevice(Hwmon hw)
+    {
+        if (SuperIoChips.Contains(hw.Name)) return $"Motherboard ({hw.Name})";
+        if (GpuChips.Contains(hw.Name))
+        {
+            var dev = Path.Combine(hw.Dir, "device");
+            var vendor = Hex(_fs.Text(Path.Combine(dev, "vendor")));
+            var device = Hex(_fs.Text(Path.Combine(dev, "device")));
+            return _pci.Name(vendor, device) ?? "Graphics card";
+        }
+        return hw.Name switch
+        {
+            "applesmc" => "Apple SMC",
+            "thinkpad" => "ThinkPad",
+            "dell_smm" => "Dell",
+            _ => hw.Name,
+        };
+    }
+
+    /// <summary>
+    /// Stable id for a hwmon chip: hwmonN numbers can change between boots, so use the device
+    /// it belongs to (e.g. "nct6775.656", "0000:03:00.0").
+    /// </summary>
+    private static string ChipId(Hwmon hw)
+    {
+        string? device = null;
+        try { device = new DirectoryInfo(Path.Combine(hw.Dir, "device")).ResolveLinkTarget(returnFinalTarget: true)?.Name; }
+        catch (IOException) { }
+        return $"{hw.Name}@{device ?? Path.GetFileName(hw.Dir)}";
     }
 
     // ---------------------------------------------------------------- Diagnostics

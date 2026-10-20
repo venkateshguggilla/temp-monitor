@@ -11,6 +11,7 @@ public partial class MainWindow : Window
     private static readonly TimeSpan Interval = TimeSpan.FromSeconds(1);
 
     private readonly Dictionary<string, MetricCard> _cards = new();
+    private readonly FanCard _fanCard = new();
     private readonly CancellationTokenSource _cts = new();
     private readonly TaskCompletionSource _stopped = new();
     private readonly TrayController _tray;
@@ -69,16 +70,18 @@ public partial class MainWindow : Window
             {
                 var started = DateTime.UtcNow;
                 List<Reading> readings;
+                FanReport? fans = null;
                 try
                 {
                     readings = _sensors.Read();
+                    fans = _sensors.ReadFans();
                 }
                 catch (Exception ex)
                 {
                     Dispatcher.UIThread.Post(() => StatusText.Text = "Sensor read failed: " + ex.Message);
                     readings = _latest;
                 }
-                Dispatcher.UIThread.Post(() => Render(readings));
+                Dispatcher.UIThread.Post(() => Render(readings, fans));
 
                 var wait = Interval - (DateTime.UtcNow - started);
                 if (wait > TimeSpan.Zero)
@@ -129,7 +132,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void Render(List<Reading> readings)
+    private void Render(List<Reading> readings, FanReport? fans = null)
     {
         _latest = readings;
         var fahrenheit = FahrenheitBox.IsChecked == true;
@@ -151,6 +154,17 @@ public partial class MainWindow : Window
         {
             Cards.Children.Remove(_cards[gone]);
             _cards.Remove(gone);
+        }
+
+        // Fans card, always last (a newly plugged-in drive's card would otherwise land after it)
+        if (fans != null)
+        {
+            _fanCard.Update(fans);
+            if (Cards.Children.LastOrDefault() != _fanCard)
+            {
+                Cards.Children.Remove(_fanCard);
+                Cards.Children.Add(_fanCard);
+            }
         }
 
         _tray.Update(readings.FirstOrDefault(r => r.Key.StartsWith("cpu:")),

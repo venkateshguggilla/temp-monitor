@@ -1,0 +1,22 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="TempMonitor.App.FanCard"
+             Width="320" Margin="8">
+    <Border Background="{StaticResource CardBg}" BorderBrush="{StaticResource CardBorder}"
+            BorderThickness="1" CornerRadius="10" Padding="16,14">
+        <StackPanel>
+            <DockPanel>
+                <TextBlock Text="Fans" FontSize="15" FontWeight="SemiBold"
+                           Foreground="{StaticResource TextPrimary}"/>
+                <TextBlock x:Name="CountText" FontSize="12" Margin="10,2,0,0"
+                           Foreground="{StaticResource TextMuted}" HorizontalAlignment="Right"/>
+            </DockPanel>
+
+            <!-- One row per fan (FanRow), filled in code -->
+            <StackPanel x:Name="Rows" Margin="0,2,0,0"/>
+
+            <TextBlock x:Name="NoteText" FontSize="12" Margin="0,10,0,0" TextWrapping="Wrap"
+                       Foreground="{StaticResource TextMuted}" IsVisible="False"/>
+        </StackPanel>
+    </Border>
+</UserControl>

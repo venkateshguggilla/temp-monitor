@@ -42,6 +42,16 @@ internal static class Program
                 if (r.Details.Count > 0)
                     Console.WriteLine("         " + string.Join(" · ", r.Details));
             }
+            var fans = sensors.ReadFans();
+            Console.WriteLine($"{"Fans",-8} " + (fans.Fans.Count == 0 ? "none" : $"{fans.Fans.Count}"));
+            foreach (var f in fans.Fans)
+            {
+                var speed = f.Rpm is { } rpm ? FanReading.FormatRpm(rpm) : "— RPM";
+                var extra = new[] { FanReading.ModeText(f.Mode), f.Percent is { } p ? $"{p:0}%" : "", f.HasControl ? "" : "read-only" }
+                    .Where(s => s.Length > 0);
+                Console.WriteLine($"         {f.Name} ({f.Device}): {speed}" + string.Concat(extra.Select(s => " · " + s)));
+            }
+            if (fans.Note != null) Console.WriteLine("         " + fans.Note);
             var status = sensors.Status;
             Console.WriteLine();
             Console.WriteLine(status.Summary);

@@ -5,7 +5,11 @@ namespace TempMonitor;
 
 /// <summary>One NVIDIA GPU as reported by NVML.</summary>
 internal sealed record NvGpu(string Name, string PciBusId, float? Temperature, float? Usage,
-    double? MemUsedBytes, double? MemTotalBytes, float? PowerWatts, float? ClockMHz);
+    double? MemUsedBytes, double? MemTotalBytes, float? PowerWatts, float? ClockMHz,
+    IReadOnlyList<NvFan>? Fans = null);
+
+/// <summary>One fan of an NVIDIA GPU: target speed in %, measured RPM (driver 535+), manual or auto.</summary>
+internal sealed record NvFan(int Index, float? Percent, float? Rpm, bool? Manual);
 
 internal interface INvml
 {
@@ -63,9 +67,43 @@ internal sealed class Nvml : INvml, IDisposable
             }
             float? power = Native.nvmlDeviceGetPowerUsage(dev, out var mw) == Success ? mw / 1000f : null;
             float? clock = Native.nvmlDeviceGetClockInfo(dev, 0, out var mhz) == Success ? mhz : null;
-            gpus.Add(new NvGpu(name.ToString(), busId, temp, usage, used, total, power, clock));
+            gpus.Add(new NvGpu(name.ToString(), busId, temp, usage, used, total, power, clock, ReadFans(dev)));
         }
         return gpus;
+    }
+
+    /// <summary>
+    /// Fans of one GPU. Each call is optional: older drivers lack some functions and GPUs
+    /// without fan control (laptops) answer "not supported", which just leaves the value empty.
+    /// </summary>
+    private static List<NvFan> ReadFans(IntPtr dev)
+    {
+        var fans = new List<NvFan>();
+        try
+        {
+            if (Native.nvmlDeviceGetNumFans(dev, out var count) != Success) return fans;
+            for (uint f = 0; f < count; f++)
+            {
+                float? pct = Native.nvmlDeviceGetFanSpeed_v2(dev, f, out var p) == Success ? p : null;
+                float? rpm = null;
+                bool? manual = null;
+                try
+                {
+                    var info = new Native.FanSpeedInfo { Version = Native.FanSpeedInfoVersion, Fan = f };
+                    if (Native.nvmlDeviceGetFanSpeedRPM(dev, ref info) == Success) rpm = info.Speed;
+                }
+                catch (EntryPointNotFoundException) { /* driver older than 535 */ }
+                try
+                {
+                    if (Native.nvmlDeviceGetFanControlPolicy_v2(dev, f, out var policy) == Success) manual = policy == 1;
+                }
+                catch (EntryPointNotFoundException) { /* driver older than 510 */ }
+                if (pct != null || rpm != null)
+                    fans.Add(new NvFan((int)f, pct, rpm, manual));
+            }
+        }
+        catch (EntryPointNotFoundException) { /* driver older than 470 */ }
+        return fans;
     }
 
     public void Dispose()
@@ -92,6 +130,9 @@ internal sealed class Nvml : INvml, IDisposable
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string BusId;
         }
 
+        [StructLayout(LayoutKind.Sequential)] public struct FanSpeedInfo { public uint Version; public uint Fan; public uint Speed; }
+        public const uint FanSpeedInfoVersion = 12 | (1u << 24); // NVML_STRUCT_VERSION(FanSpeedInfo, 1)
+
         [DllImport(Lib)] public static extern int nvmlInit_v2();
         [DllImport(Lib)] public static extern int nvmlShutdown();
         [DllImport(Lib)] public static extern int nvmlDeviceGetCount_v2(out uint count);
@@ -103,5 +144,9 @@ internal sealed class Nvml : INvml, IDisposable
         [DllImport(Lib)] public static extern int nvmlDeviceGetMemoryInfo(IntPtr device, out Memory mem);
         [DllImport(Lib)] public static extern int nvmlDeviceGetPowerUsage(IntPtr device, out uint milliwatts);
         [DllImport(Lib)] public static extern int nvmlDeviceGetClockInfo(IntPtr device, int clockType, out uint mhz);
+        [DllImport(Lib)] public static extern int nvmlDeviceGetNumFans(IntPtr device, out uint count);
+        [DllImport(Lib)] public static extern int nvmlDeviceGetFanSpeed_v2(IntPtr device, uint fan, out uint percent);
+        [DllImport(Lib)] public static extern int nvmlDeviceGetFanSpeedRPM(IntPtr device, ref FanSpeedInfo info);
+        [DllImport(Lib)] public static extern int nvmlDeviceGetFanControlPolicy_v2(IntPtr device, uint fan, out uint policy);
     }
 }

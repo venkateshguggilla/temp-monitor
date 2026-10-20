@@ -9,6 +9,9 @@ public interface ISensorProvider : IDisposable
     /// <summary>One reading per device (CPU, each GPU, RAM, each drive), refreshed on every call.</summary>
     List<Reading> Read();
 
+    /// <summary>All fans with speed and control state, as of the latest <see cref="Read"/>.</summary>
+    FanReport ReadFans();
+
     /// <summary>Every raw sensor value, for the "All sensors" view.</summary>
     string DumpAll();
 
