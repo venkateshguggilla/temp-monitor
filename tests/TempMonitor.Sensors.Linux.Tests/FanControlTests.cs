@@ -342,6 +342,41 @@ public class FanControlTests
     }
 
     [Fact]
+    public void Invalid_values_are_refused_before_anyone_is_asked_to_approve()
+    {
+        using var f = Desktop();
+        var c = Controller(f);
+        c.Tick();
+        var auth = new FakeAuthorizer();
+        var daemon = new FanDaemon(c, auth);
+        var longName = new string('x', 41);
+        Assert.Contains("at most 40", daemon.Handle(new FanRequest { Cmd = "rename", Key = Fan1, Name = longName }, User).Error);
+        Assert.Contains("control", daemon.Handle(new FanRequest { Cmd = "rename", Key = Fan1, Name = "CPU\nApprove updates" }, User).Error);
+        var manyPoints = new FanSetting { Mode = FanControlMode.Curve };
+        for (var i = 0; i < 40; i++) manyPoints.Points.Add(new CurvePoint(i, 50));
+        Assert.Contains("at most 32", daemon.Handle(new FanRequest { Cmd = "set", Key = Fan1, Setting = manyPoints }, User).Error);
+        var manySources = Fixed(50);
+        for (var i = 0; i < 20; i++) manySources.Sources.Add("cpu:" + i);
+        Assert.Contains("sources", daemon.Handle(new FanRequest { Cmd = "set", Key = Fan1, Setting = manySources }, User).Error);
+        Assert.Empty(auth.Asked); // no approval prompt for any of them
+        Assert.False(c.Config.Names.ContainsKey(Fan1));
+    }
+
+    [Fact]
+    public void Requests_longer_than_the_limit_end_the_connection()
+    {
+        Assert.Equal("{\"cmd\":\"status\"}", FanDaemon.ReadLine(new StringReader("{\"cmd\":\"status\"}\r\nnext"), 100));
+        Assert.Null(FanDaemon.ReadLine(new StringReader(""), 100));
+        Assert.Throws<IOException>(() => FanDaemon.ReadLine(new StringReader(new string('a', 200) + "\n"), 100));
+    }
+
+    [Fact]
+    public void Log_lines_from_clients_cant_contain_line_breaks()
+    {
+        Assert.Equal("uid 1000: rename x fake line", FanDaemon.LogSafe("uid 1000: rename x\nfake line"));
+    }
+
+    [Fact]
     public void Cli_parses_fan_numbers_curves_and_safety()
     {
         using var f = Desktop();

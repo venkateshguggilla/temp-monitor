@@ -80,6 +80,15 @@ internal sealed class FanDaemon
 
     private static readonly TimeSpan IdentifyFor = TimeSpan.FromSeconds(5);
 
+    // Any local user may connect, so the service bounds what one client can make it hold
+    internal const int MaxLineChars = 64 * 1024;
+    internal const int MaxClients = 32;
+    internal const int IdleTimeoutMs = 60_000;
+    internal const int MaxCurvePoints = 32;
+    internal const int MaxSources = 16;
+    internal const int MaxNameLength = 40;
+    private readonly SemaphoreSlim _clients = new(MaxClients, MaxClients);
+
     private readonly FanController _controller;
     private readonly IAuthorizer _auth;
     private readonly object _lock = new();
@@ -102,7 +111,9 @@ internal sealed class FanDaemon
             "set" or "profile" or "rename" or "identify" or "safety" => ControlAction,
             _ => "",
         };
-        if (action == "") return new FanResponse(false, $"Unknown command '{req.Cmd}'", null);
+        if (action == "") return new FanResponse(false, $"Unknown command '{Shorten(req.Cmd)}'", null);
+        // Check the values first: the approval prompt only ever shows a valid, short request
+        if (Precheck(req) is { } invalid) return new FanResponse(false, invalid, null);
         if (action != null && !_auth.Check(action, peer, Describe(req)))
             return new FanResponse(false, action == SafetyAction
                 ? "Lowering a fan safety limit needs administrator approval"
@@ -142,7 +153,6 @@ internal sealed class FanDaemon
                     if (req.Key == null || !known.Contains(req.Key)) return new FanResponse(false, $"No fan '{req.Key}'", null);
                     var name = req.Name?.Trim();
                     if (string.IsNullOrEmpty(name)) config.Names.Remove(req.Key);
-                    else if (name.Length > 40) return new FanResponse(false, "Names can be at most 40 characters", null);
                     else config.Names[req.Key] = name;
                     _controller.SaveConfig();
                     break;
@@ -196,9 +206,37 @@ internal sealed class FanDaemon
         lock (_lock) return _controller.Config.Safety.Clone();
     }
 
+    /// <summary>Checks a request's values before anyone is asked to approve it.</summary>
+    internal static string? Precheck(FanRequest req)
+    {
+        if (req.Key is { Length: > 200 }) return "Fan key too long";
+        switch (req.Cmd)
+        {
+            case "rename":
+                var name = req.Name?.Trim() ?? "";
+                if (name.Length > MaxNameLength) return $"Names can be at most {MaxNameLength} characters";
+                if (name.Any(char.IsControl)) return "Names can't contain control characters";
+                break;
+            case "profile":
+                if (req.Name == null || !FanConfig.Profiles.Contains(req.Name))
+                    return "Profiles: " + string.Join(", ", FanConfig.Profiles);
+                break;
+            case "set" when req.Setting != null:
+                return Validate(req.Setting);
+        }
+        return null;
+    }
+
+    private static string Shorten(string? s) => s == null ? "" : s.Length <= 40 ? s : s[..40] + "…";
+
+    internal static string LogSafe(string s) => new(s.Select(ch => char.IsControl(ch) ? ' ' : ch).ToArray());
+
     private static string? Validate(FanSetting s)
     {
         if (s.Percent is < 0 or > 100) return "Percent must be 0–100";
+        if (s.Points.Count > MaxCurvePoints) return $"A curve can have at most {MaxCurvePoints} points";
+        if (s.Sources.Count > MaxSources || s.Sources.Any(src => src.Length > 64))
+            return $"At most {MaxSources} temperature sources";
         if (s.Mode == FanControlMode.Curve)
         {
             if (s.Points.Count < 2) return "A curve needs at least 2 points";
@@ -258,7 +296,18 @@ internal sealed class FanDaemon
             try { client = listener.Accept(); }
             catch (SocketException) { return; }
             catch (ObjectDisposedException) { return; }
-            new Thread(() => Serve(client, log)) { IsBackground = true, Name = "Fan client" }.Start();
+            if (!_clients.Wait(0))
+            {
+                // Too many open connections: refuse rather than start yet another thread
+                client.Dispose();
+                continue;
+            }
+            client.ReceiveTimeout = IdleTimeoutMs;
+            new Thread(() =>
+            {
+                try { Serve(client, log); }
+                finally { _clients.Release(); }
+            }) { IsBackground = true, Name = "Fan client" }.Start();
         }
     }
 
@@ -273,14 +322,16 @@ internal sealed class FanDaemon
             try
             {
                 string? line;
-                while ((line = reader.ReadLine()) != null)
+                while ((line = ReadLine(reader, MaxLineChars)) != null)
                 {
                     FanResponse resp;
                     try
                     {
                         var req = JsonSerializer.Deserialize<FanRequest>(line, FanConfig.Json) ?? new FanRequest();
                         resp = Handle(req, peer);
-                        if (req.Cmd != "status") log($"uid {peer.Uid}: {req.Cmd} {req.Key ?? req.Name} -> {(resp.Ok ? "ok" : resp.Error)}");
+                        // Client text is shortened and stripped of line breaks so it can't fake log lines
+                        if (req.Cmd != "status")
+                            log(LogSafe($"uid {peer.Uid}: {Shorten(req.Cmd)} {Shorten(req.Key ?? req.Name)} -> {(resp.Ok ? "ok" : resp.Error)}"));
                     }
                     catch (JsonException e)
                     {
@@ -289,8 +340,22 @@ internal sealed class FanDaemon
                     writer.WriteLine(JsonSerializer.Serialize(resp, FanConfig.Compact));
                 }
             }
-            catch (IOException) { /* client went away */ }
+            catch (IOException) { /* client went away, sent too much, or stayed silent too long */ }
         }
+    }
+
+    /// <summary>One line of at most <paramref name="max"/> characters; a longer one ends the connection.</summary>
+    internal static string? ReadLine(TextReader reader, int max)
+    {
+        var sb = new StringBuilder();
+        int c;
+        while ((c = reader.Read()) != -1)
+        {
+            if (c == '\n') return sb.ToString().TrimEnd('\r');
+            if (sb.Length >= max) throw new IOException("Request too long");
+            sb.Append((char)c);
+        }
+        return sb.Length > 0 ? sb.ToString() : null;
     }
 
     /// <summary>SO_PEERCRED: the connecting process's pid and uid, vouched for by the kernel.</summary>
